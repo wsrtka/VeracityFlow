@@ -1,0 +1,5 @@
+services:
+  # VeracityFlow
+  veracityflow:
+    build: .
+    env_file: .env
