@@ -5,4 +5,4 @@ COPY . .
 
 RUN pip install --no-cache-dir -r requirements.txt
 
-CMD ["python", "graphs/fact_checker.py"]
+CMD ["python", "app/fact_checker.py"]

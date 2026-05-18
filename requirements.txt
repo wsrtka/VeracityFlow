@@ -1,2 +1,5 @@
 langgraph
 tavily-python
+dspy
+autogen
+google-cloud-aiplatform
