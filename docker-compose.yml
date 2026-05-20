@@ -3,3 +3,6 @@ services:
   veracityflow:
     build: .
     env_file: .env
+    volumes:
+      - .:/app
+      - ~/.config/gcloud:/root/.config/gcloud:ro
