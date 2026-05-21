@@ -1,5 +1,6 @@
 langgraph
 tavily-python
 dspy
-autogen
+autogen-agentchat
+autogen-ext[openai]
 google-cloud-aiplatform
