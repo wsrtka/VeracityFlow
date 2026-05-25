@@ -3,4 +3,3 @@ tavily-python
 dspy
 autogen-agentchat
 autogen-ext[openai]
-google-cloud-aiplatform
