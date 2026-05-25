@@ -6,11 +6,11 @@ A portfolio project for automated fact-checking using agentic AI workflows. Vera
 
 The pipeline is built on three frameworks working in concert:
 
-**LangGraph** orchestrates the overall workflow as a stateful graph. A claim enters the graph and passes through a sequence of nodes — research planning, web search, and agent debate — before producing a final report.
+**LangGraph** orchestrates the overall workflow as a stateful graph. A claim enters the graph and passes through a research planning node, a search node (which loops up to 3 times to gather sufficient evidence), and finally a reporting node that produces the final verdict.
 
-**DSPy** handles the LLM-powered reasoning steps. A `ChainOfThought` module generates targeted search queries from the input claim, using Gemini 2.5 Flash as the underlying model via the Gemini AI Studio API.
+**DSPy** handles the LLM-powered reasoning steps. A `ChainOfThought` module with a typed `GenerateSearchQueries` signature generates exactly 3 targeted search queries from the input claim, using Gemini 2.5 Flash as the underlying model via the Gemini AI Studio API.
 
-**AutoGen (autogen-agentchat)** runs the multi-agent debate at the end of the pipeline. A `FactChecker` and a `Contextualist` agent argue the claim against the retrieved evidence, and a `Judge` agent reviews the debate and issues a final Veracity Score (0–100) with a summary.
+**AutoGen (autogen-agentchat)** runs the multi-agent debate at the end of the pipeline. A `FactChecker` and a `Contextualist` agent debate the claim against the retrieved evidence for 4 messages, after which a `Judge` agent reviews the transcript and issues a final Veracity Score (0–100) with a summary.
 
 Web search is powered by the **Tavily** search API with advanced depth and raw content retrieval.
 
@@ -20,14 +20,21 @@ claim input
     ▼
 [LangGraph]
     │
-    ├── research_planner (DSPy ChainOfThought → search queries)
+    ├── research_planner (DSPy ChainOfThought → 3 search queries)
     │
-    ├── web_search (Tavily API → evidence)
+    ├── search_engine (Tavily API → evidence) ◄─┐
+    │         │                                  │
+    │   sufficiency_checker                      │
+    │         ├── insufficient (revision < 3) ───┘
+    │         └── sufficient
     │
-    └── agent_debate (AutoGen: FactChecker ↔ Contextualist → Judge)
-                │
-                ▼
-         final report + veracity score
+    └── final_report_node
+              │
+              ├── debate: FactChecker ↔ Contextualist (4 messages)
+              └── Judge reviews transcript → Veracity Score + summary
+                        │
+                        ▼
+                  final_report
 ```
 
 ## Stack
@@ -68,11 +75,11 @@ claim input
    docker compose up --build
    ```
 
-The app runs `app/fact_checker.py` on startup.
+The app runs `app/fact_checker.py` on startup, which by default fact-checks the claim `"The moon is made of cheese."` — swap it out for your own claim at the bottom of the file.
 
 ### Running Locally (without Docker)
 
-Requires Python 3.13 (autogen-agentchat does not yet support Python 3.14).
+Requires Python 3.13 (`autogen-agentchat` does not yet support Python 3.14).
 
 ```bash
 pip install -r requirements.txt
@@ -84,7 +91,7 @@ python app/fact_checker.py
 ```
 VeracityFlow/
 ├── app/
-│   └── fact_checker.py     # Main entrypoint and LangGraph pipeline
+│   └── fact_checker.py     # Full pipeline: DSPy signatures, LangGraph graph, AutoGen debate
 ├── Dockerfile
 ├── docker-compose.yml
 ├── requirements.txt
@@ -93,5 +100,5 @@ VeracityFlow/
 
 ## Notes
 
-- The Tavily free tier has rate limits. If you hit them during development, add a short delay between searches or reduce `max_results`.
-- The `google-cloud-aiplatform` package is not required for this project. Authentication goes through the Gemini AI Studio API directly, not Vertex AI.
+- The Tavily free tier has rate limits. The search node runs up to 3 iterations, so a single run makes up to 3 API calls. If you hit rate limits during development, reduce the iteration cap in `sufficiency_checker` or add a `time.sleep()` between calls.
+- Authentication to Gemini goes through the AI Studio API directly using `GEMINI_API_KEY` — the `google-cloud-aiplatform` package is not required and can be removed from `requirements.txt`.
