@@ -1,5 +1,6 @@
 import asyncio
 import os
+import uuid
 from typing import List, TypedDict
 
 import dspy
@@ -7,6 +8,7 @@ from autogen_agentchat.agents import AssistantAgent
 from autogen_agentchat.conditions import MaxMessageTermination
 from autogen_agentchat.teams import RoundRobinGroupChat
 from autogen_ext.models.openai import OpenAIChatCompletionClient
+from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, StateGraph
 from tavily import TavilyClient
 
@@ -17,6 +19,8 @@ dspy.settings.configure(lm=gemini_model)
 
 
 class AgentState(TypedDict):
+    """Graph state."""
+
     claim: str
     queries: List[str]
     search_results: List[str]
@@ -25,7 +29,8 @@ class AgentState(TypedDict):
 
 
 class GenerateSearchQueires(dspy.Signature):
-    """Refine a claim into a list of search queries to verify its veracity."""
+    """DSPY optimisation.
+    Refine a claim into a list of search queries to verify its veracity."""
 
     claim: str = dspy.InputField(desc="The raw claim to be fact-checked.")  # pyright: ignore[reportInvalidTypeForm]
     context: str = dspy.InputField(  # pyright: ignore[reportInvalidTypeForm]
@@ -37,6 +42,7 @@ class GenerateSearchQueires(dspy.Signature):
 
 
 async def run_agent_debate(search_results, original_claim):
+    """Autogen multi-agent debate."""
     model_client = OpenAIChatCompletionClient(
         model="gemini-2.5-flash",
         api_key=os.getenv("GEMINI_API_KEY"),
@@ -119,30 +125,50 @@ def final_report_node(state: AgentState):
     return {"final_report": report}
 
 
-workflow = StateGraph(AgentState)
+def build_graph(checkpointer):
+    workflow = StateGraph(AgentState)
 
-workflow.add_node("planner", research_planner)
-workflow.add_node("searcher", search_engine)
-workflow.add_node("reporter", final_report_node)
+    workflow.add_node("planner", research_planner)
+    workflow.add_node("searcher", search_engine)
+    workflow.add_node("reporter", final_report_node)
 
-workflow.set_entry_point("planner")
+    workflow.set_entry_point("planner")
 
-workflow.add_edge("planner", "searcher")
-workflow.add_edge("reporter", END)
-workflow.add_conditional_edges(
-    "searcher",
-    sufficiency_checker,
-    {
-        "sufficient": "reporter",
-        "insufficient": "searcher",
-    },
-)
+    workflow.add_edge("planner", "searcher")
+    workflow.add_edge("reporter", END)
+    workflow.add_conditional_edges(
+        "searcher",
+        sufficiency_checker,
+        {
+            "sufficient": "reporter",
+            "insufficient": "searcher",
+        },
+    )
 
-app = workflow.compile()
+    app = workflow.compile(checkpointer=checkpointer)
+    return app
 
 
 if __name__ == "__main__":
-    tavily_client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
-    initial_input = {"claim": "The moon is made of cheese."}
-    result = app.invoke(initial_input)  # pyright: ignore[reportArgumentType]
-    print(result)
+    with SqliteSaver.from_conn_string("checkpoints.db") as checkpointer:
+        app = build_graph(checkpointer)
+
+        thread_id = str(uuid.uuid4())
+        config = {"configurable": {"thread_id": thread_id}}
+
+        print(f"Starting run with thread id {thread_id}")
+
+        tavily_client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
+        initial_input = {"claim": "The moon is made of cheese."}
+
+        result = app.invoke(initial_input)  # pyright: ignore[reportArgumentType]
+        print("Final report:")
+        print(result["final_report"])
+
+        print("\nCheckpoint history:")
+        for checkpoint in app.get_state_history(config):
+            node = checkpoint.metadata.get("source", "unknown")
+            step = checkpoint.metadata.get("step", "?")
+            print(
+                f"  Step {step} | Node: {node} | Keys in state: {list(checkpoint.state.keys())}"
+            )
