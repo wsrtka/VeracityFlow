@@ -8,7 +8,7 @@ from autogen_agentchat.agents import AssistantAgent
 from autogen_agentchat.conditions import MaxMessageTermination
 from autogen_agentchat.teams import RoundRobinGroupChat
 from autogen_ext.models.openai import OpenAIChatCompletionClient
-from langgraph.checkpoint.sqlite import SqliteSaver
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 from tavily import TavilyClient
 
@@ -150,18 +150,22 @@ def build_graph(checkpointer):
 
 
 if __name__ == "__main__":
-    with SqliteSaver.from_conn_string("checkpoints.db") as checkpointer:
+    with MemorySaver() as checkpointer:
         app = build_graph(checkpointer)
 
         thread_id = str(uuid.uuid4())
-        config = {"configurable": {"thread_id": thread_id}}
+        config = {
+            "configurable": {
+                "thread_id": thread_id,
+            }
+        }
 
         print(f"Starting run with thread id {thread_id}")
 
         tavily_client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
         initial_input = {"claim": "The moon is made of cheese."}
 
-        result = app.invoke(initial_input)  # pyright: ignore[reportArgumentType]
+        result = app.invoke(initial_input, config=config)
         print("Final report:")
         print(result["final_report"])
 
