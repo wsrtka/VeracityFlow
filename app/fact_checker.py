@@ -7,13 +7,16 @@ import dspy
 from autogen_agentchat.agents import AssistantAgent
 from autogen_agentchat.conditions import MaxMessageTermination
 from autogen_agentchat.teams import RoundRobinGroupChat
+from autogen_core.models import ModelInfo
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 from tavily import TavilyClient
 
 gemini_model = dspy.LM(
-    model="gemini/gemini-2.5-flash", api_key=os.getenv("GEMINI_API_KEY"), max_tokens=500
+    model="groq/llama-3.3-70b-versatile",
+    api_key=os.getenv("GROQ_API_KEY"),
+    max_tokens=500,
 )
 dspy.settings.configure(lm=gemini_model)
 
@@ -44,9 +47,16 @@ class GenerateSearchQueires(dspy.Signature):
 async def run_agent_debate(search_results, original_claim):
     """Autogen multi-agent debate."""
     model_client = OpenAIChatCompletionClient(
-        model="gemini-2.5-flash",
-        api_key=os.getenv("GEMINI_API_KEY"),
-        base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+        model="llama-3.3-70b-versatile",
+        api_key=os.getenv("GROQ_API_KEY"),
+        base_url="https://api.groq.com/openai/v1",
+        model_info=ModelInfo(
+            vision=False,
+            function_calling=True,
+            json_output=True,
+            family="unknown",
+            structured_output=True,
+        ),
     )
 
     fact_checker = AssistantAgent(
@@ -150,6 +160,7 @@ def build_graph(checkpointer):
 
 
 if __name__ == "__main__":
+    # MemorySaver used for simplicity - in production this would be SqliteSaver or PostgresSaver (hence the context manager)
     with MemorySaver() as checkpointer:
         app = build_graph(checkpointer)
 
@@ -170,9 +181,9 @@ if __name__ == "__main__":
         print(result["final_report"])
 
         print("\nCheckpoint history:")
-        for checkpoint in app.get_state_history(config):
+        for checkpoint in reversed(app.get_state_history(config)):
             node = checkpoint.metadata.get("source", "unknown")
             step = checkpoint.metadata.get("step", "?")
             print(
-                f"  Step {step} | Node: {node} | Keys in state: {list(checkpoint.state.keys())}"
+                f"  Step {step} | Node: {node} | Keys in state: {list(checkpoint.values.keys())}"
             )
