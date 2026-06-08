@@ -1,5 +1,4 @@
 langgraph
-langgraph-checkpoint-sqlite
 tavily-python
 dspy
 autogen-agentchat

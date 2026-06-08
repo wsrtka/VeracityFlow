@@ -13,6 +13,8 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 from tavily import TavilyClient
 
+from app.optimise import QueryGenerator
+
 gemini_model = dspy.LM(
     model="groq/llama-3.3-70b-versatile",
     api_key=os.getenv("GROQ_API_KEY"),
@@ -29,19 +31,6 @@ class AgentState(TypedDict):
     search_results: List[str]
     revision_number: int
     final_report: str
-
-
-class GenerateSearchQueires(dspy.Signature):
-    """DSPY optimisation.
-    Refine a claim into a list of search queries to verify its veracity."""
-
-    claim: str = dspy.InputField(desc="The raw claim to be fact-checked.")  # pyright: ignore[reportInvalidTypeForm]
-    context: str = dspy.InputField(  # pyright: ignore[reportInvalidTypeForm]
-        desc="Previous search results to inform the query refinement."
-    )
-    queries: str = dspy.OutputField(
-        desc="Exactly 3 distinct search queries to verify the claim, seperated by a semicolon. Do not include numbering."
-    )  # pyright: ignore[reportInvalidTypeForm]
 
 
 async def run_agent_debate(search_results, original_claim):
@@ -98,8 +87,15 @@ async def run_agent_debate(search_results, original_claim):
 
 def research_planner(state: AgentState):
     print("PLANNING RESEARCH")
-    planner = dspy.ChainOfThought(GenerateSearchQueires)
-    result = planner(claim=state["claim"], context=state.get("search_results", []))
+
+    program = QueryGenerator()
+
+    if os.path.exists("app/compiled_query_generator.json"):
+        program.load("app/compiled_query_generator.json")
+    else:
+        print("No compiled program found; run optimise.py to compile one")
+
+    result = program(claim=state["claim"], context=state.get("search_results", []))
     raw_queries = result.queries
     query_list = [q.strip() for q in raw_queries.split(";") if q.strip()]
     if not query_list:
