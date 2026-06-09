@@ -1,3 +1,4 @@
+import json
 import os
 
 import dspy
@@ -30,37 +31,6 @@ class QueryGenerator(dspy.Module):
         return self.generate(claim=claim, context=context)
 
 
-# learning examples
-# todo move this to file??
-examples = [
-    dspy.Example(
-        claim="The Great Wall of China is visible from space.",
-        context="",
-        queries="Is the Great Wall of China visible from space; astronaut visibility Earth landmarks space; Great Wall of China myths debunked",
-    ).with_inputs("claim", "context"),
-    dspy.Example(
-        claim="Drinking coffee stunts your growth.",
-        context="",
-        queries="does coffee stunt growth scientific evidence; caffeine effect on bone development children; coffee growth myth medical research",
-    ).with_inputs("claim", "context"),
-    dspy.Example(
-        claim="Lightning never strikes the same place twice.",
-        context="",
-        queries="can lightning strike same place twice; lightning strike frequency tall structures; lightning rod multiple strikes evidence",
-    ).with_inputs("claim", "context"),
-    dspy.Example(
-        claim="Humans only use 10 percent of their brains.",
-        context="",
-        queries="10 percent brain myth neuroscience; how much of human brain is used; brain activity research full brain usage",
-    ).with_inputs("claim", "context"),
-    dspy.Example(
-        claim="Napoleon Bonaparte was very short.",
-        context="",
-        queries="Napoleon Bonaparte actual height historical record; Napoleon height myth origin; average height 18th century France comparison",
-    ).with_inputs("claim", "context"),
-]
-
-
 # metric function
 def query_quality_metric(example, prediction, trace=None):
     queries_output = prediction.queries
@@ -87,6 +57,11 @@ def query_quality_metric(example, prediction, trace=None):
 
 
 if __name__ == "__main__":
+    with open("data/train_examples.json") as f:
+        examples = [
+            dspy.Example(**e).with_inputs("claim", "context") for e in json.load(f)
+        ]
+
     program = QueryGenerator()
 
     optimiser = BootstrapFewShot(
