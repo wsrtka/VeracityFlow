@@ -1,0 +1,27 @@
+[
+  {
+    "claim": "The Great Wall of China is visible from space.",
+    "context": "",
+    "queries": "Is the Great Wall of China visible from space; astronaut visibility Earth landmarks space; Great Wall of China myths debunked"
+  },
+  {
+    "claim": "Drinking coffee stunts your growth.",
+    "context": "",
+    "queries": "does coffee stunt growth scientific evidence; caffeine effect on bone development children; coffee growth myth medical research"
+  },
+  {
+    "claim": "Lightning never strikes the same place twice.",
+    "context": "",
+    "queries": "can lightning strike same place twice; lightning strike frequency tall structures; lightning rod multiple strikes evidence"
+  },
+  {
+    "claim": "Humans only use 10 percent of their brains.",
+    "context": "",
+    "queries": "10 percent brain myth neuroscience; how much of human brain is used; brain activity research full brain usage"
+  },
+  {
+    "claim": "Napoleon Bonaparte was very short.",
+    "context": "",
+    "queries": "Napoleon Bonaparte actual height historical record; Napoleon height myth origin; average height 18th century France comparison"
+  }
+]
