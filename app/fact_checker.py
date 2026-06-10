@@ -23,6 +23,8 @@ gemini_model = dspy.LM(
 )
 dspy.settings.configure(lm=gemini_model)
 
+tavily_client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
+
 
 class AgentState(TypedDict):
     """Graph state."""
@@ -137,7 +139,7 @@ def sufficiency_checker(state: AgentState):
     print("CHECKING SUFFICIENCY")
     score = state.get("veracity_score", 50)
     revision = state.get("revision_number", 0)
-    if 35 <= score <= 65 and revision < 3:
+    if score is None or (35 <= score <= 65 and revision < 3):
         return "insufficient"
     return "sufficient"
 
@@ -188,7 +190,6 @@ if __name__ == "__main__":
 
         print(f"Starting run with thread id {thread_id}")
 
-        tavily_client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
         initial_input = {"claim": "Sharks are older than trees."}
 
         result = app.invoke(initial_input, config=config)
