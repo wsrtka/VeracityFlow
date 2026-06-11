@@ -1,5 +1,6 @@
 import asyncio
 import os
+import re
 import uuid
 from typing import List, TypedDict
 
@@ -22,6 +23,8 @@ gemini_model = dspy.LM(
 )
 dspy.settings.configure(lm=gemini_model)
 
+tavily_client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
+
 
 class AgentState(TypedDict):
     """Graph state."""
@@ -31,6 +34,7 @@ class AgentState(TypedDict):
     search_results: List[str]
     revision_number: int
     final_report: str
+    veracity_score: int
 
 
 async def run_agent_debate(search_results, original_claim):
@@ -61,7 +65,12 @@ async def run_agent_debate(search_results, original_claim):
     judge = AssistantAgent(
         name="Judge",
         model_client=model_client,
-        system_message="Review the debate and provide a final Veracity Score (0-100) and summary.",
+        system_message="""Review the debate and provide:
+                1. A final Veracity Score as an integer from 0 to 100
+                2. A summary of your reasoning
+
+                You MUST include the score in this exact format: VERACITY_SCORE: <number>
+                Example: VERACITY_SCORE: 72""",
     )
 
     task = f"""
@@ -82,7 +91,15 @@ async def run_agent_debate(search_results, original_claim):
         task=f"Here is the debate transcript:\n{debate_transcript}\nProvide your final Veracity Score and summary."
     )
 
-    return judge_result.messages[-1].content
+    report = judge_result.messages[-1].content
+
+    # Parse the score out of the judge's response
+    match = re.search(r"VERACITY_SCORE:\s*(\d+)", report)
+    score = (
+        int(match.group(1)) if match else 50
+    )  # default to uncertain if parsing fails
+
+    return report, score
 
 
 def research_planner(state: AgentState):
@@ -120,15 +137,19 @@ def search_engine(state: AgentState):
 
 def sufficiency_checker(state: AgentState):
     print("CHECKING SUFFICIENCY")
-    if state.get("revision_number", 0) > 3:
-        return "sufficient"
-    return "insufficient"
+    score = state.get("veracity_score", 50)
+    revision = state.get("revision_number", 0)
+    if score is None or (35 <= score <= 65 and revision < 3):
+        return "insufficient"
+    return "sufficient"
 
 
 def final_report_node(state: AgentState):
     print("GENERATING FINAL REPORT")
-    report = asyncio.run(run_agent_debate(state["search_results"], state["claim"]))
-    return {"final_report": report}
+    report, score = asyncio.run(
+        run_agent_debate(state["search_results"], state["claim"])
+    )
+    return {"final_report": report, "veracity_score": score}
 
 
 def build_graph(checkpointer):
@@ -141,12 +162,12 @@ def build_graph(checkpointer):
     workflow.set_entry_point("planner")
 
     workflow.add_edge("planner", "searcher")
-    workflow.add_edge("reporter", END)
+    workflow.add_edge("searcher", "reporter")
     workflow.add_conditional_edges(
-        "searcher",
+        "reporter",
         sufficiency_checker,
         {
-            "sufficient": "reporter",
+            "sufficient": END,
             "insufficient": "searcher",
         },
     )
@@ -169,15 +190,14 @@ if __name__ == "__main__":
 
         print(f"Starting run with thread id {thread_id}")
 
-        tavily_client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
-        initial_input = {"claim": "The moon is made of cheese."}
+        initial_input = {"claim": "Sharks are older than trees."}
 
         result = app.invoke(initial_input, config=config)
         print("Final report:")
         print(result["final_report"])
 
         print("\nCheckpoint history:")
-        for checkpoint in reversed(app.get_state_history(config)):
+        for checkpoint in app.get_state_history(config):
             node = checkpoint.metadata.get("source", "unknown")
             step = checkpoint.metadata.get("step", "?")
             print(
