@@ -190,7 +190,7 @@ if __name__ == "__main__":
 
         print(f"Starting run with thread id {thread_id}")
 
-        initial_input = {"claim": "Sharks are older than trees."}
+        initial_input = {"claim": "Coca Cola is good for digestion"}
 
         result = app.invoke(initial_input, config=config)
         print("Final report:")

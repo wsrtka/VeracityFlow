@@ -1,16 +1,16 @@
 # VeracityFlow
 
-A portfolio project for automated fact-checking using agentic AI workflows. VeracityFlow takes a claim, researches it using live web search, then runs a structured multi-agent debate to produce a final veracity verdict with a confidence score.
+A portfolio project for automated fact-checking using agentic AI workflows. VeracityFlow takes a claim, researches it using live web search, then runs a structured multi-agent debate to produce a final verdict with a Veracity Score (0–100) that captures the full spectrum from false to true — including half-truths and unverifiable claims.
 
 ## How It Works
 
 The pipeline is built on three frameworks working in concert:
 
-**LangGraph** orchestrates the overall workflow as a stateful graph. A claim enters the graph and passes through a research planning node, a search node (which loops up to 3 times to gather sufficient evidence), and finally a reporting node that produces the final verdict.
+**LangGraph** orchestrates the overall workflow as a stateful graph with checkpointing. A claim enters the graph and passes through a research planning node, a search node that loops until evidence is sufficient (or a confidence threshold is met early), and a reporting node that produces the final verdict. State is persisted after every node via `MemorySaver`, enabling run inspection and resumption by `thread_id`.
 
-**DSPy** handles the LLM-powered reasoning steps. A `ChainOfThought` module with a typed `GenerateSearchQueries` signature generates exactly 3 targeted search queries from the input claim, using Gemini 2.5 Flash as the underlying model via the Gemini AI Studio API.
+**DSPy** handles the LLM-powered query generation step. A `QueryGenerator` module wraps a `ChainOfThought` over a typed `GenerateSearchQueries` signature. Rather than hand-writing prompts, the module is compiled using `BootstrapFewShot` — DSPy's optimiser selects the best few-shot demonstrations from a labelled dataset using a custom quality metric, and saves the result as a reusable compiled artifact.
 
-**AutoGen (autogen-agentchat)** runs the multi-agent debate at the end of the pipeline. A `FactChecker` and a `Contextualist` agent debate the claim against the retrieved evidence for 4 messages, after which a `Judge` agent reviews the transcript and issues a final Veracity Score (0–100) with a summary.
+**AutoGen (autogen-agentchat)** runs the multi-agent debate. A `FactChecker` and a `Contextualist` debate the claim against retrieved evidence for 4 messages, after which a `Judge` reviews the transcript and issues a structured Veracity Score and summary. The debate and judgement are intentionally separated into two steps.
 
 Web search is powered by the **Tavily** search API with advanced depth and raw content retrieval.
 
@@ -18,24 +18,37 @@ Web search is powered by the **Tavily** search API with advanced depth and raw c
 claim input
     │
     ▼
-[LangGraph]
+[LangGraph — checkpointed]
     │
-    ├── research_planner (DSPy ChainOfThought → 3 search queries)
+    ├── research_planner
+    │     └── DSPy QueryGenerator (compiled with BootstrapFewShot) → 3 search queries
     │
-    ├── search_engine (Tavily API → evidence) ◄─┐
-    │         │                                  │
-    │   sufficiency_checker                      │
-    │         ├── insufficient (revision < 3) ───┘
-    │         └── sufficient
+    ├── search_engine (Tavily API → evidence) ◄─────────────┐
+    │         │                                              │
+    │   sufficiency_checker                                  │
+    │         ├── score ≤20 or ≥80 → sufficient             │
+    │         ├── revision ≥ 3     → sufficient             │
+    │         └── otherwise        → insufficient ──────────┘
     │
     └── final_report_node
-              │
               ├── debate: FactChecker ↔ Contextualist (4 messages)
-              └── Judge reviews transcript → Veracity Score + summary
+              └── Judge → VERACITY_SCORE + summary
                         │
                         ▼
-                  final_report
+                  final_report + veracity_score
 ```
+
+### Veracity Score
+
+The score (0–100) is designed to capture nuance rather than a binary true/false verdict:
+
+- **0–20**: Claim is false
+- **21–34**: Mostly false
+- **35–65**: Mixed, unverifiable, or a half-truth
+- **66–79**: Mostly true
+- **80–100**: Claim is true
+
+The sufficiency checker uses this score as a secondary signal — if the judge returns a confident score (≤20 or ≥80) before the search cap is reached, the graph stops searching early rather than running unnecessary iterations.
 
 ## Stack
 
@@ -45,7 +58,9 @@ claim input
 | LLM reasoning | `dspy` |
 | Multi-agent debate | `autogen-agentchat`, `autogen-ext[openai]` |
 | Web search | `tavily-python` |
-| Language model | Gemini 2.5 Flash (via Gemini AI Studio) |
+| Language model | Llama 3.3 70B via Groq |
+| Checkpointing | `langgraph` `MemorySaver` |
+| Testing | `pytest` |
 | Containerisation | Docker / Docker Compose |
 
 ## Getting Started
@@ -53,7 +68,7 @@ claim input
 ### Prerequisites
 
 - Docker and Docker Compose
-- A [Gemini API key](https://aistudio.google.com/app/apikey) (free tier available)
+- A [Groq API key](https://console.groq.com/) (free tier available, generous rate limits)
 - A [Tavily API key](https://tavily.com/)
 
 ### Setup
@@ -66,7 +81,7 @@ claim input
 
 2. Create a `.env` file in the project root:
    ```env
-   GEMINI_API_KEY=your_gemini_api_key_here
+   GROQ_API_KEY=your_groq_api_key_here
    TAVILY_API_KEY=your_tavily_api_key_here
    ```
 
@@ -75,15 +90,29 @@ claim input
    docker compose up --build
    ```
 
-The app runs `app/fact_checker.py` on startup, which by default fact-checks the claim `"The moon is made of cheese."` — swap it out for your own claim at the bottom of the file.
-
 ### Running Locally (without Docker)
 
-Requires Python 3.13 (`autogen-agentchat` does not yet support Python 3.14).
+Requires Python 3.13.
 
 ```bash
 pip install -r requirements.txt
 python app/fact_checker.py
+```
+
+### Running the DSPy Optimiser
+
+The query generator is compiled separately and the result saved as `app/compiled_query_generator.json`. Run this before the main pipeline (or whenever you update `data/train_examples.json`):
+
+```bash
+python app/optimise.py
+```
+
+The compiled artifact is checked in to the repo so you don't need to re-run it on every execution — only when examples or the metric change.
+
+### Running Tests
+
+```bash
+python -m pytest test/ -v
 ```
 
 ## Project Structure
@@ -91,14 +120,21 @@ python app/fact_checker.py
 ```
 VeracityFlow/
 ├── app/
-│   └── fact_checker.py     # Full pipeline: DSPy signatures, LangGraph graph, AutoGen debate
+│   ├── fact_checker.py              # Main pipeline: LangGraph graph, nodes, AutoGen debate
+│   ├── optimise.py                  # DSPy compilation script
+│   └── compiled_query_generator.json # Compiled DSPy artifact (generated by optimise.py)
+├── data/
+│   └── train_examples.json          # Labelled examples for DSPy optimisation
+├── test/
+│   └── test_fact_checker.py         # pytest tests with mocked external APIs
 ├── Dockerfile
 ├── docker-compose.yml
 ├── requirements.txt
-└── .env                    # Not committed — create locally (see Setup)
+└── .env                             # Not committed — create locally (see Setup)
 ```
 
 ## Notes
 
-- The Tavily free tier has rate limits. The search node runs up to 3 iterations, so a single run makes up to 3 API calls. If you hit rate limits during development, reduce the iteration cap in `sufficiency_checker` or add a `time.sleep()` between calls.
-- Authentication to Gemini goes through the AI Studio API directly using `GEMINI_API_KEY` — the `google-cloud-aiplatform` package is not required and can be removed from `requirements.txt`.
+- **Checkpointing**: `MemorySaver` is used for simplicity — in production this would be replaced with `SqliteSaver` or `PostgresSaver` for cross-run persistence. Each run is identified by a `thread_id` and can be inspected via `app.get_state_history(config)`.
+- **Tavily rate limits**: The free tier allows a limited number of requests. The search node runs up to 3 iterations per run. If you hit limits during development, reduce the cap in `sufficiency_checker` or add a `time.sleep()` between calls.
+- **DSPy optimisation**: Training examples live in `data/train_examples.json` rather than in code, keeping data and logic separate. In a production pipeline, `optimise.py` would run as a CI job triggered by new labelled data.
