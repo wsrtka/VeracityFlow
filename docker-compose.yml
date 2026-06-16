@@ -1,8 +1,11 @@
 services:
   # VeracityFlow
   veracityflow:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     env_file: .env
     volumes:
       - .:/app
       - ~/.config/gcloud:/root/.config/gcloud:ro
+    command: uvicorn app.api:app --host 0.0.0.0 --port 8000 --reload

@@ -144,11 +144,9 @@ def sufficiency_checker(state: AgentState):
     return "sufficient"
 
 
-def final_report_node(state: AgentState):
+async def final_report_node(state: AgentState):
     print("GENERATING FINAL REPORT")
-    report, score = asyncio.run(
-        run_agent_debate(state["search_results"], state["claim"])
-    )
+    report, score = await run_agent_debate(state["search_results"], state["claim"])
     return {"final_report": report, "veracity_score": score}
 
 
@@ -192,7 +190,7 @@ if __name__ == "__main__":
 
         initial_input = {"claim": "Coca Cola is good for digestion"}
 
-        result = app.invoke(initial_input, config=config)
+        result = await app.ainvoke(initial_input, config=config)
         print("Final report:")
         print(result["final_report"])
 
