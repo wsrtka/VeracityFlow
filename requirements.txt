@@ -6,3 +6,4 @@ autogen-ext[openai]
 pytest
 fastapi
 sse-starlette
+uvicorn

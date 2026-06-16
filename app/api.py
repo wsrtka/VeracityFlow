@@ -1,9 +1,9 @@
 from typing import AsyncGenerator
 from uuid import uuid4
 
-from autogen import MemorySaver
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from langgraph.checkpoint.memory import MemorySaver
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
