@@ -4,3 +4,5 @@ dspy
 autogen-agentchat
 autogen-ext[openai]
 pytest
+fastapi
+sse-starlette
