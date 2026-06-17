@@ -1,3 +1,4 @@
+import os
 from typing import AsyncGenerator
 from uuid import uuid4
 
@@ -13,7 +14,7 @@ app = FastAPI(title="VeracityFlow API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173"],
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -73,3 +74,10 @@ async def check_claim(request: ClaimRequest):
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
