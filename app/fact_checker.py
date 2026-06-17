@@ -175,29 +175,33 @@ def build_graph(checkpointer):
 
 
 if __name__ == "__main__":
-    # MemorySaver used for simplicity - in production this would be SqliteSaver or PostgresSaver (hence the context manager)
-    with MemorySaver() as checkpointer:
-        app = build_graph(checkpointer)
 
-        thread_id = str(uuid.uuid4())
-        config = {
-            "configurable": {
-                "thread_id": thread_id,
+    async def main():
+        # MemorySaver used for simplicity - in production this would be SqliteSaver or PostgresSaver (hence the context manager)
+        with MemorySaver() as checkpointer:
+            app = build_graph(checkpointer)
+
+            thread_id = str(uuid.uuid4())
+            config = {
+                "configurable": {
+                    "thread_id": thread_id,
+                }
             }
-        }
 
-        print(f"Starting run with thread id {thread_id}")
+            print(f"Starting run with thread id {thread_id}")
 
-        initial_input = {"claim": "Coca Cola is good for digestion"}
+            initial_input = {"claim": "Coca Cola is good for digestion"}
 
-        result = await app.ainvoke(initial_input, config=config)
-        print("Final report:")
-        print(result["final_report"])
+            result = await app.ainvoke(initial_input, config=config)
+            print("Final report:")
+            print(result["final_report"])
 
-        print("\nCheckpoint history:")
-        for checkpoint in app.get_state_history(config):
-            node = checkpoint.metadata.get("source", "unknown")
-            step = checkpoint.metadata.get("step", "?")
-            print(
-                f"  Step {step} | Node: {node} | Keys in state: {list(checkpoint.values.keys())}"
-            )
+            print("\nCheckpoint history:")
+            for checkpoint in app.get_state_history(config):
+                node = checkpoint.metadata.get("source", "unknown")
+                step = checkpoint.metadata.get("step", "?")
+                print(
+                    f"  Step {step} | Node: {node} | Keys in state: {list(checkpoint.values.keys())}"
+                )
+
+    asyncio.run(main())
