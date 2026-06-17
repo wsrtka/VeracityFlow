@@ -190,7 +190,7 @@ if __name__ == "__main__":
 
         initial_input = {"claim": "Coca Cola is good for digestion"}
 
-        result = app.ainvoke(initial_input, config=config)
+        result = await app.ainvoke(initial_input, config=config)
         print("Final report:")
         print(result["final_report"])
 
