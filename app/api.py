@@ -6,12 +6,23 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from langgraph.checkpoint.memory import MemorySaver
 from pydantic import BaseModel
+from sse_starlette.middleware.base import BaseHTTPMiddleware
 from sse_starlette.sse import EventSourceResponse
 
 from app.fact_checker import build_graph
 
 app = FastAPI(title="VeracityFlow API")
 
+
+class DisableBufferingMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        response.headers["X-Accel-Buffering"] = "no"
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
+app.add_middleware(DisableBufferingMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
