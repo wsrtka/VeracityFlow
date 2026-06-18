@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from langgraph.checkpoint.memory import MemorySaver
 from pydantic import BaseModel
 from sse_starlette.middleware.base import BaseHTTPMiddleware
-from sse_starlette.sse import EventSourceResponse
+from starlette.sse import EventSourceResponse
 
 from app.fact_checker import build_graph
 
