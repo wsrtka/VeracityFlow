@@ -14,12 +14,24 @@ from app.fact_checker import build_graph
 app = FastAPI(title="VeracityFlow API")
 
 
-class DisableBufferingMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request, call_next):
-        response = await call_next(request)
-        response.headers["X-Accel-Buffering"] = "no"
-        response.headers["Cache-Control"] = "no-cache"
-        return response
+class DisableBufferingMiddleware:
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+
+            async def send_with_headers(message):
+                if message["type"] == "http.response.start":
+                    headers = dict(message.get("headers", []))
+                    headers[b"x-accel-buffering"] = b"no"
+                    headers[b"cache-control"] = b"no-cache"
+                    message["headers"] = list(headers.items())
+                await send(message)
+
+            await self.app(scope, receive, send_with_headers)
+        else:
+            await self.app(scope, receive, send)
 
 
 app.add_middleware(DisableBufferingMiddleware)
@@ -79,7 +91,15 @@ async def check_claim(request: ClaimRequest):
         async for message in stream_pipeline(request.claim):
             yield {"event": message["event"], "data": json.dumps(message["data"])}
 
-    return EventSourceResponse(generator(), media_type="text/event-stream")
+    return EventSourceResponse(
+        generator(),
+        media_type="text/event-stream",
+        headers={
+            "X-Accel-Buffering": "no",
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        },
+    )
 
 
 @app.get("/health")
